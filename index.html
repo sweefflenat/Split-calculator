@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SettleUp Sweet Pro</title>
+    <!-- 1. Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 2. React and ReactDOM libraries -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- 3. Babel Standalone: This translates the React code so the browser can understand it -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        input[type="date"] { color-scheme: light; }
+    </style>
+</head>
+<body>
+    <!-- The Root element where the app will appear -->
+    <div id="root"></div>
+
+    <!-- This script tag contains your React code -->
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        // --- Theme Colors ---
+        const COLORS = [
+            "#f59e0b", "#6366f1", "#ec4899", "#f97316", "#8b5cf6", 
+            "#10b981", "#06b6d4", "#ef4444", "#14b8a6", "#71717a"
+        ];
+
+        // --- Icons ---
+        const Icon = ({ name, className = "w-4 h-4" }) => {
+            const paths = {
+                edit: <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />,
+                trash: <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />,
+                plus: <path d="M12 5v14M5 12h14" />,
+                check: <path d="M20 6L9 17l-5-5" />,
+                arrow: <path d="M5 12h14M12 5l7 7-7 7" />,
+                user: <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" />,
+                star: <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />,
+                chevron: <path d="M6 9l6 6 6-6" />,
+                users: <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" />,
+                x: <path d="M18 6L6 18M6 6l12 12" />
+            };
+            return (
+                <svg className={className} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                    {paths[name]}
+                </svg>
+            );
+        };
+
+        function App() {
+            // --- Persistence ---
+            const [eventName, setEventName] = useState(() => localStorage.getItem('s_eventName') || "ACTIVITY NAME");
+            const [isEditingName, setIsEditingName] = useState(false);
+            const [members, setMembers] = useState(() => JSON.parse(localStorage.getItem('s_members') || "[]"));
+            const [expenses, setExpenses] = useState(() => JSON.parse(localStorage.getItem('s_expenses') || "[]"));
+            const [paidMarks, setPaidMarks] = useState(() => JSON.parse(localStorage.getItem('s_paidMarks') || "{}"));
+            const [presets, setPresets] = useState(() => JSON.parse(localStorage.getItem('s_presets') || "[]"));
+            
+            // UI State
+            const [selectedPresetId, setSelectedPresetId] = useState("");
+            const [newMember, setNewMember] = useState("");
+            const [presetNaming, setPresetNaming] = useState(""); 
+            const [payer, setPayer] = useState("");
+            const [splitAmong, setSplitAmong] = useState([]);
+            const [amount, setAmount] = useState("");
+            const [description, setDescription] = useState("");
+            const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+            const [activeDateTab, setActiveDateTab] = useState(null);
+
+            useEffect(() => {
+                localStorage.setItem('s_eventName', eventName);
+                localStorage.setItem('s_members', JSON.stringify(members));
+                localStorage.setItem('s_expenses', JSON.stringify(expenses));
+                localStorage.setItem('s_paidMarks', JSON.stringify(paidMarks));
+                localStorage.setItem('s_presets', JSON.stringify(presets));
+            }, [eventName, members, expenses, paidMarks, presets]);
+
+            // --- Handlers ---
+            const handleAddMember = () => {
+                const name = newMember.trim().toUpperCase();
+                if (!name || members.length >= 10 || members.find(m => m.name === name)) return;
+                const updated = [...members, { name, color: COLORS[members.length] }];
+                setMembers(updated);
+                setNewMember("");
+                setSelectedPresetId("custom"); 
+                if (!payer) setPayer(name);
+                setSplitAmong(updated.map(u => u.name));
+            };
+
+            const handleRemoveMember = (name) => {
+                const updated = members.filter(x => x.name !== name);
+                setMembers(updated);
+                setSelectedPresetId("custom");
+            };
+
+            const handleSaveGroup = () => {
+                const groupName = presetNaming.trim().toUpperCase();
+                if (!groupName || members.length === 0) return;
+                const newId = Date.now().toString();
+                const newPreset = { id: newId, name: groupName, members: [...members] };
+                setPresets(prev => [...prev, newPreset]);
+                setPresetNaming("");
+                setSelectedPresetId(newId);
+            };
+
+            const handleLoadPreset = (e) => {
+                const selectedId = e.target.value;
+                if (!selectedId) {
+                    setSelectedPresetId("");
+                    return;
+                }
+                const preset = presets.find(p => p.id.toString() === selectedId);
+                if (preset) {
+                    setMembers(preset.members);
+                    setPayer(preset.members[0]?.name || "");
+                    setSplitAmong(preset.members.map(m => m.name));
+                    setSelectedPresetId(selectedId);
+                }
+            };
+
+            const logExpense = (e) => {
+                e.preventDefault();
+                const val = parseFloat(amount);
+                if (!val || !payer || splitAmong.length === 0) return;
+                const entry = { id: Date.now().toString(), payer, amount: val, description: description || "Expense", date, splitAmong };
+                setExpenses([entry, ...expenses]);
+                setAmount(""); setDescription("");
+                setActiveDateTab(date);
+            };
+
+            const toggleAll = () => {
+                if (splitAmong.length === members.length) setSplitAmong([]);
+                else setSplitAmong(members.map(m => m.name));
+            };
+
+            // --- Calculations ---
+            const grouped = useMemo(() => {
+                const g = {};
+                expenses.forEach(e => {
+                    if (!g[e.date]) g[e.date] = { items: [], txs: [] };
+                    g[e.date].items.push(e);
+                });
+                Object.keys(g).forEach(dKey => {
+                    let bal = {}; members.forEach(m => bal[m.name] = 0);
+                    g[dKey].items.forEach(exp => {
+                        bal[exp.payer] += exp.amount;
+                        const share = exp.amount / (exp.splitAmong.length || 1);
+                        exp.splitAmong.forEach(n => { if (bal[n] !== undefined) bal[n] -= share; });
+                    });
+                    let d = [], c = [];
+                    for (let n in bal) {
+                        if (bal[n] > 0.01) c.push({ name: n, amt: bal[n] });
+                        else if (bal[n] < -0.01) d.push({ name: n, amt: Math.abs(bal[n]) });
+                    }
+                    let i = 0, j = 0;
+                    while (i < d.length && j < c.length) {
+                        const p = Math.min(d[i].amt, c[j].amt);
+                        g[dKey].txs.push({ from: d[i].name, to: c[j].name, amt: p });
+                        d[i].amt -= p; c[j].amt -= p;
+                        if (d[i].amt < 0.01) i++;
+                        if (c[j].amt < 0.01) j++;
+                    }
+                });
+                return g;
+            }, [expenses, members]);
+
+            const datesList = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
+            if (datesList.length > 0 && !activeDateTab) setActiveDateTab(datesList[0]);
+
+            return (
+                <div className="min-h-screen bg-[#FFFBF7] text-[#423831] p-4 pb-20 font-sans selection:bg-amber-100">
+                    <div className="max-w-md mx-auto space-y-6">
+                        
+                        {/* Activity Name Header */}
+                        <div className="pt-4 flex items-center group">
+                            {isEditingName ? (
+                                <input 
+                                    autoFocus
+                                    value={eventName} 
+                                    onChange={(e) => setEventName(e.target.value.toUpperCase())}
+                                    onBlur={() => setIsEditingName(false)}
+                                    onKeyDown={(e) => e.key === 'Enter' && setIsEditingName(false)}
+                                    className="w-full text-3xl font-black text-amber-900 bg-amber-50 rounded-2xl px-4 py-2 outline-none border-2 border-amber-200"
+                                />
+                            ) : (
+                                <div className="flex items-center gap-3 cursor-pointer" onClick={() => setIsEditingName(true)}>
+                                    <h1 className="text-3xl font-black text-amber-900 tracking-tighter uppercase truncate max-w-[280px]">{eventName}</h1>
+                                    <div className="p-2 bg-amber-100/50 rounded-full text-amber-400 group-hover:text-amber-600 transition-colors">
+                                        <Icon name="edit" className="w-4 h-4" />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Squad Management Card */}
+                        <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-amber-100/50 space-y-6">
+                            <div className="space-y-3">
+                                <p className="text-[10px] font-black uppercase text-amber-400 tracking-[0.2em]">Group Presets</p>
+                                <div className="relative">
+                                    <select 
+                                        value={selectedPresetId}
+                                        onChange={handleLoadPreset}
+                                        className="w-full appearance-none bg-amber-50 border border-amber-100 text-amber-900 font-black text-[11px] uppercase px-10 py-4 rounded-2xl outline-none focus:ring-2 ring-amber-200 transition-all cursor-pointer"
+                                    >
+                                        <option value="">Choose from presets...</option>
+                                        {presets.map((p) => (
+                                            <option key={p.id} value={p.id}>{p.name}</option>
+                                        ))}
+                                        {selectedPresetId === 'custom' && <option value="custom">Custom Group (Modified)</option>}
+                                    </select>
+                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none text-amber-500">
+                                        <Icon name="users" className="w-4 h-4" />
+                                    </div>
+                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-amber-300">
+                                        <Icon name="chevron" className="w-4 h-4" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-3">
+                                <p className="text-[10px] font-black uppercase text-amber-400 tracking-[0.2em]">Current Members ({members.length}/10)</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {members.map((m, i) => (
+                                        <div key={i} className="flex items-center gap-2 bg-amber-50/50 pl-3 pr-1 py-1 rounded-full border border-amber-100">
+                                            <div className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: m.color }}></div>
+                                            <span className="text-[10px] font-black uppercase text-amber-900">{m.name}</span>
+                                            <button onClick={() => handleRemoveMember(m.name)} className="p-1 text-amber-200 hover:text-red-400 transition-colors">
+                                                <Icon name="trash" className="w-3 h-3" />
+                                            </button>
+                                        </div>
+                                    ))}
+                                    {members.length === 0 && <p className="text-[11px] text-stone-300 font-bold italic py-2 tracking-tight uppercase">No one here yet...</p>}
+                                </div>
+                            </div>
+
+                            <div className="flex gap-2">
+                                <input 
+                                    value={newMember} onChange={(e) => setNewMember(e.target.value)}
+                                    placeholder="Friend's name..." 
+                                    className="flex-grow bg-stone-50 p-4 rounded-2xl text-xs font-bold outline-none border-none focus:ring-2 ring-amber-200 transition-all"
+                                    onKeyPress={(e) => e.key === 'Enter' && handleAddMember()}
+                                />
+                                <button onClick={handleAddMember} className="bg-amber-500 text-white p-4 rounded-2xl shadow-lg shadow-amber-200 active:scale-90 transition-transform">
+                                    <Icon name="plus" className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            {members.length > 0 && (
+                                <div className="pt-4 border-t border-amber-50 space-y-3">
+                                    <p className="text-[9px] font-black uppercase text-amber-400 tracking-[0.2em]">Save as New Preset</p>
+                                    <div className="flex gap-2">
+                                        <input 
+                                            value={presetNaming} onChange={(e) => setPresetNaming(e.target.value)}
+                                            placeholder="GROUP NAME..." 
+                                            className="flex-grow bg-amber-50/50 p-3 rounded-xl text-[10px] font-black outline-none border border-amber-100 uppercase"
+                                        />
+                                        <button 
+                                            onClick={handleSaveGroup}
+                                            disabled={!presetNaming.trim()}
+                                            className="bg-stone-800 text-white px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 disabled:opacity-20 transition-all"
+                                        >
+                                            Save
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Expense Calculator Form */}
+                        {members.length > 0 && (
+                            <div className="bg-white p-7 rounded-[3rem] shadow-xl shadow-amber-900/5 border border-amber-50">
+                                <form onSubmit={logExpense} className="space-y-8">
+                                    <div>
+                                        <p className="text-[10px] font-black uppercase text-amber-500 mb-4 tracking-widest">Who Paid?</p>
+                                        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+                                            {members.map(m => (
+                                                <button key={m.name} type="button" onClick={() => setPayer(m.name)} 
+                                                    className={`flex-1 min-w-[78px] p-3 rounded-2xl border-2 transition-all ${payer === m.name ? 'border-amber-400 bg-amber-50 shadow-inner' : 'border-transparent bg-stone-50 opacity-40'}`}>
+                                                    <div className="w-9 h-9 rounded-full mx-auto mb-1.5 flex items-center justify-center text-white shadow-sm" style={{ backgroundColor: m.color }}><Icon name="user" className="w-4 h-4" /></div>
+                                                    <p className="text-[9px] font-black uppercase truncate tracking-tighter">{m.name}</p>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <p className="text-[10px] font-black uppercase text-amber-400 mb-4 tracking-widest">Split with</p>
+                                        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+                                            <button type="button" onClick={toggleAll} 
+                                                className={`flex-1 min-w-[78px] p-3 rounded-2xl border-2 transition-all relative ${splitAmong.length === members.length ? 'border-emerald-400 bg-emerald-50' : 'border-transparent bg-stone-100 opacity-40'}`}>
+                                                <div className="w-9 h-9 rounded-full mx-auto mb-1.5 flex items-center justify-center bg-stone-200 text-stone-600">
+                                                    {splitAmong.length === members.length ? <Icon name="check" className="w-5 h-5 text-emerald-500" /> : <span className="text-[10px] font-black uppercase">All</span>}
+                                                </div>
+                                                <p className="text-[10px] font-black uppercase tracking-tighter">All</p>
+                                            </button>
+
+                                            {members.map(m => {
+                                                const isSelected = splitAmong.includes(m.name);
+                                                return (
+                                                    <button key={m.name} type="button" onClick={() => setSplitAmong(prev => isSelected ? prev.filter(x => x !== m.name) : [...prev, m.name])} 
+                                                        className={`flex-1 min-w-[78px] p-3 rounded-2xl border-2 transition-all relative ${isSelected ? 'border-emerald-400 bg-emerald-50' : 'border-transparent bg-stone-50 opacity-20'}`}>
+                                                        <div className="w-9 h-9 rounded-full mx-auto mb-1.5 flex items-center justify-center text-white shadow-sm" style={{ backgroundColor: m.color }}>
+                                                            <Icon name="user" className="w-4 h-4" />
+                                                        </div>
+                                                        {isSelected && (
+                                                            <div className="absolute top-2 right-2 bg-emerald-500 rounded-full p-0.5 text-white shadow-sm border-2 border-emerald-50">
+                                                                <Icon name="check" className="w-2.5 h-2.5" />
+                                                            </div>
+                                                        )}
+                                                        <p className="text-[10px] font-black uppercase truncate tracking-tighter">{m.name}</p>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-12 gap-3">
+                                        <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Description..." className="col-span-12 p-4 bg-stone-50 rounded-2xl text-xs font-bold border-none outline-none focus:ring-2 ring-amber-100" />
+                                        <div className="col-span-7 relative">
+                                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-amber-500 font-black text-sm">$</span>
+                                            <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" className="w-full pl-8 pr-4 py-4 bg-stone-50 rounded-2xl text-sm font-black border-none outline-none focus:ring-2 ring-amber-100" required />
+                                        </div>
+                                        <input type="date" value={date} onChange={e => setDate(e.target.value)} className="col-span-5 p-4 bg-stone-50 rounded-2xl text-[10px] font-bold border-none outline-none focus:ring-2 ring-amber-100" required />
+                                    </div>
+
+                                    <button type="submit" className="w-full bg-amber-900 text-white font-black py-5 rounded-3xl uppercase text-xs tracking-[0.2em] shadow-xl active:scale-95 transition-all">
+                                        Log Expense
+                                    </button>
+                                </form>
+                            </div>
+                        )}
+
+                        {/* Results Sections */}
+                        {datesList.length > 0 && (
+                            <div className="space-y-6 pt-6 border-t border-amber-100/50">
+                                <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
+                                    {datesList.map(d => (
+                                        <button key={d} onClick={() => setActiveDateTab(d)} className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase transition-all whitespace-nowrap shadow-sm ${activeDateTab === d ? 'bg-amber-400 text-white' : 'bg-white text-stone-300 border border-stone-100'}`}>
+                                            {new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {activeDateTab && grouped[activeDateTab] && (
+                                    <div className="space-y-6 pb-10">
+                                        <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-amber-50">
+                                            <h3 className="text-[10px] font-black uppercase text-amber-400 mb-5 tracking-widest">Expenses</h3>
+                                            <div className="space-y-3">
+                                                {grouped[activeDateTab].items.map(exp => (
+                                                    <div key={exp.id} className="flex items-center justify-between p-4 bg-stone-50 rounded-2xl border border-stone-100">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="w-8 h-8 rounded-full flex items-center justify-center text-white shadow-sm" style={{ backgroundColor: members.find(m => m.name === exp.payer)?.color || '#ccc' }}><Icon name="user" className="w-4 h-4" /></div>
+                                                            <div>
+                                                                <p className="text-xs font-black uppercase text-stone-800 leading-none mb-1">{exp.description}</p>
+                                                                <p className="text-[9px] font-bold text-stone-400 uppercase tracking-tighter">Paid by {exp.payer}</p>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-center gap-4">
+                                                            <span className="text-sm font-black text-amber-900">${exp.amount.toFixed(2)}</span>
+                                                            <button onClick={() => setExpenses(expenses.filter(e => e.id !== exp.id))} className="text-stone-200 hover:text-red-500 transition-colors"><Icon name="trash" /></button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-amber-900 p-8 rounded-[3.5rem] text-white shadow-2xl relative overflow-hidden">
+                                            <div className="absolute top-0 right-0 p-8 opacity-10 rotate-12 pointer-events-none">
+                                                <Icon name="check" className="w-24 h-24" />
+                                            </div>
+                                            <h3 className="text-xs font-black uppercase text-amber-400 mb-6 tracking-widest relative z-10">Settle Balance</h3>
+                                            <div className="space-y-3 relative z-10">
+                                                {grouped[activeDateTab].txs.length === 0 ? (
+                                                    <p className="text-center py-10 text-[10px] font-black opacity-30 uppercase tracking-[0.4em]">All Square ✨</p>
+                                                ) : (
+                                                    grouped[activeDateTab].txs.map((s, idx) => {
+                                                        const mid = `${activeDateTab}_${s.from}_${s.to}`.replace(/\s+/g, '');
+                                                        const isP = paidMarks[mid];
+                                                        return (
+                                                            <div 
+                                                                key={idx} 
+                                                                onClick={() => setPaidMarks({ ...paidMarks, [mid]: !isP })} 
+                                                                className={`p-5 rounded-3xl border transition-all cursor-pointer flex items-center justify-between ${isP ? 'bg-emerald-500/20 border-emerald-500/10 opacity-50' : 'bg-white/10 border-white/5 hover:bg-white/15'}`}
+                                                            >
+                                                                <div className="flex items-center gap-4">
+                                                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center border-2 transition-colors ${isP ? 'bg-emerald-400 border-emerald-400 text-white shadow-lg shadow-emerald-500/20' : 'border-white/20'}`}>
+                                                                        {isP && <Icon name="check" className="w-3.5 h-3.5" />}
+                                                                    </div>
+                                                                    <span className={`text-[11px] font-black uppercase tracking-tight ${isP ? 'line-through opacity-50' : ''}`}>
+                                                                        {s.from} <Icon name="arrow" className="inline w-3 h-3 mx-1 opacity-20" /> {s.to}
+                                                                    </span>
+                                                                </div>
+                                                                <span className={`text-sm font-black ${isP ? 'opacity-30' : 'text-amber-400'}`}>${s.amt.toFixed(2)}</span>
+                                                            </div>
+                                                        );
+                                                    })
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {members.length === 0 && (
+                            <div className="p-16 text-center bg-white rounded-[3rem] border-2 border-dashed border-amber-100 flex flex-col items-center gap-4 opacity-40">
+                                <Icon name="users" className="text-amber-200 w-10 h-10" />
+                                <p className="text-[11px] font-black text-amber-900 uppercase tracking-widest">Setup your group above</p>
+                            </div>
+                        )}
+
+                        <footer className="text-center opacity-10 pt-10">
+                            <p className="text-[9px] font-black uppercase tracking-[0.5em]">Sweet Settle Pro v15.0</p>
+                        </footer>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
